@@ -1,2 +1,3 @@
 # hercules
-Hercules related stuff 
+Hercules-related stuff 
+----------------------------
