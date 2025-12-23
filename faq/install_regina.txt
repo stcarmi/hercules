@@ -1,0 +1,25 @@
+Building Regina from source
+-----------------------------
+# Install build dependencies
+sudo dnf install gcc make ncurses-devel -y
+
+# Download Regina REXX source
+cd ~
+curl -LO https://sourceforge.net/projects/regina-rexx/files/regina-rexx/3.9.6/regina-rexx-3.9.6.tar.gz
+
+# Extract and build
+tar xzf regina-rexx-3.9.6.tar.gz
+cd regina-rexx-3.9.6
+./configure --prefix=/usr/local
+make
+sudo make install
+
+# Update library cache
+sudo ldconfig
+
+# Then verify 
+rexx -v
+
+# If you get a library error when running, you may need to add /usr/local/lib to your library path:
+echo 'export LD_LIBRARY_PATH=/usr/local/lib:$LD_LIBRARY_PATH' >> ~/.bashrc
+source ~/.bashrc

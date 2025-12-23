@@ -1,0 +1,133 @@
+#!/bin/bash
+#**********************************************************************
+#***                                                                ***
+#*** Script:  hercenv.sh                                            ***
+#***                                                                ***
+#*** Purpose: Set up Hercules environment (PATH and library paths)  ***
+#***          for running Hercules utilities without starting the   ***
+#***          emulator. Uses the same OS/arch detection logic as    ***
+#***          the TK5 mvs_ipl script.                               ***
+#***                                                                ***
+#*** Usage:   source hercenv.sh                                     ***
+#***          or                                                    ***
+#***          . hercenv.sh                                          ***
+#***                                                                ***
+#*** Created: 2024/12/22                                            ***
+#***                                                                ***
+#**********************************************************************
+
+# Check if script is being sourced or executed
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
+    echo "=========================================="
+    echo "ERROR: This script must be SOURCED, not executed!"
+    echo "=========================================="
+    echo ""
+    echo "Please run it using one of these methods:"
+    echo ""
+    echo "  source ${0}"
+    echo "  . ${0}"
+    echo ""
+    echo "Or add this to your ~/.bashrc file:"
+    echo "  source ${0}"
+    echo ""
+    exit 1
+fi
+
+#
+# set environment - using TK5 detection logic
+#
+a=`uname -m`
+if [[ ${a:0:3} == 'arm' ]];then
+   hf=`readelf -A /proc/self/exe 2>/dev/null | grep Tag_ABI_VFP_args`
+   if [[ ${hf:2:3} == 'Tag' ]];then arch='arm';else arch='arm_softfloat';fi;fi
+if [[ $a == 'aarch64' ]];then arch='aarch64';fi
+if [[ $a == 'x86_64' ]];then arch=64;fi
+if [[ ${a:2:2} == '86' ]];then arch=32;fi
+system=`uname -s | awk '{print tolower($0)}'`
+
+# TK5 base directory (assume script is in TK5 root)
+TK5_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+case $system in
+linux)
+   export PATH=${TK5_DIR}/hercules/$system/$arch/bin:$PATH
+   export LD_LIBRARY_PATH=${TK5_DIR}/hercules/$system/$arch/lib:${TK5_DIR}/hercules/$system/$arch/lib/hercules:$LD_LIBRARY_PATH
+   HERC_BIN="${TK5_DIR}/hercules/$system/$arch/bin"
+   HERC_LIB="${TK5_DIR}/hercules/$system/$arch/lib"
+   ;;
+darwin)
+   export PATH=${TK5_DIR}/hercules/$system/bin:$PATH
+   export DYLD_LIBRARY_PATH=${TK5_DIR}/hercules/$system/lib:${TK5_DIR}/hercules/$system/lib/hercules:$DYLD_LIBRARY_PATH
+   HERC_BIN="${TK5_DIR}/hercules/$system/bin"
+   HERC_LIB="${TK5_DIR}/hercules/$system/lib"
+   ;;
+*)
+   echo "System $system not supported."
+   return 1
+   ;;
+esac
+
+#
+# Display environment information
+#
+echo "=========================================="
+echo "Hercules TK5 Environment Setup"
+echo "=========================================="
+echo "System:           $system"
+echo "Architecture:     $arch ($a)"
+echo "TK5 Directory:    ${TK5_DIR}"
+echo "Hercules Binary:  ${HERC_BIN}"
+echo "Hercules Library: ${HERC_LIB}"
+echo ""
+echo "Environment variables set:"
+echo "  PATH (updated)"
+if [[ $system == 'linux' ]]; then
+   echo "  LD_LIBRARY_PATH (updated)"
+elif [[ $system == 'darwin' ]]; then
+   echo "  DYLD_LIBRARY_PATH (updated)"
+fi
+echo ""
+
+#
+# Check for missing dependencies (Linux only)
+#
+if [[ $system == 'linux' ]]; then
+   MISSING_LIBS=$(ldd "${HERC_BIN}/dasdinit" 2>/dev/null | grep "not found")
+   if [[ ! -z "$MISSING_LIBS" ]]; then
+      echo "⚠️  WARNING: Missing system libraries detected:"
+      echo "$MISSING_LIBS" | while read line; do
+         echo "   $line"
+      done
+      echo ""
+      echo "To fix missing libbz2.so.1.0 on Fedora/RHEL:"
+      echo "   sudo ln -s /usr/lib64/libbz2.so.1.0.8 /usr/lib64/libbz2.so.1.0"
+      echo ""
+      echo "To fix on Debian/Ubuntu:"
+      echo "   sudo apt-get install libbz2-1.0"
+      echo ""
+   fi
+fi
+
+#
+# Display available utilities
+#
+echo "Available Hercules utilities:"
+
+FOUND=0
+for util in hercules dasdinit dasdisup dasdload dasdls dasdcat hetinit hetget cckdcomp dasdcopy; do
+   if command -v $util >/dev/null 2>&1; then
+      echo "  ✓ $util"
+      FOUND=1
+   fi
+done
+
+if [[ $FOUND -eq 0 ]]; then
+   echo "  Checking directory..."
+   ls -1 ${HERC_BIN} 2>/dev/null | head -10
+fi
+
+echo ""
+echo "You can now run Hercules utilities like:"
+echo "  dasdinit -a dasd/newvol.3390 3390-3 NEWVOL"
+echo "  dasdls dasd/mvs000.3350"
+echo "=========================================="
