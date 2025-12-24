@@ -1,0 +1,104 @@
+CREATING DASD IN HERCULES MVS 3.8J - QUICK REFERENCE GUIDE
+==========================================================
+Based on Jay Moseley's "Adding DASD Volumes" (jaymoseley.com)
+
+OVERVIEW
+--------
+To add a new DASD volume to MVS 3.8j running under Hercules, complete these 7 steps:
+
+STEP 1: CREATE THE DASD IMAGE (Host OS)
+---------------------------------------
+Use the dasdinit utility in a terminal/command prompt:
+
+    dasdinit -a [-z] <filename> <devtype> <volser>
+
+    -a          = Create alternate tracks (required for MVS utilities)
+    -z          = Compress the DASD image (optional)
+    <filename>  = Host file name (e.g., WORK01.3350 or MYVOL.150)
+    <devtype>   = DASD type: 2314, 3330, 3340, 3350, 3375, 3380, 3390
+    <volser>    = Volume serial (6 chars); use SCRTCH initially, set real value in ICKDSF
+
+Common DASD types supported by MVS 3.8j:
+    3350  - 555 cylinders, ~317MB    (most compatible)
+    3375  - 959 cylinders, ~410MB
+    3380  - 885 cylinders, ~630MB
+    3390-1 - 1113 cylinders, ~946MB
+
+WARNING: MVS 3.8j has a 32,767 track limit. Avoid larger DASD models.
+
+STEP 2: ATTACH DASD TO HERCULES
+-------------------------------
+In the Hercules console (while MVS is running):
+
+    attach <address> <devtype> <filename> [cu=3880]
+
+    <address>   = Channel/unit address (e.g., 253)
+    <devtype>   = Device type (e.g., 3350)
+    <filename>  = Path to DASD file (e.g., dasd/work01.3350)
+    cu=3880     = Required for 3390 devices only
+
+STEP 3: INITIALIZE WITH ICKDSF
+------------------------------
+Submit this JCL (volume must be offline to MVS):
+
+    //ICKDSF  JOB (1),ICKDSF,CLASS=A,MSGCLASS=X
+    //ICKDSF EXEC PGM=ICKDSF,REGION=4096K
+    //SYSPRINT DD  SYSOUT=*
+    //SYSIN    DD  *
+      INIT UNITADDRESS(<address>) NOVERIFY VOLID(<volser>) -
+           OWNER(HERCULES) VTOC(0,1,<tracks>)
+    /*
+    //
+
+Use PGM=ICKDSF for 3340/3350; use PGM=ICKDSF13 for 3375/3380/3390.
+<tracks> = VTOC size (30 tracks or 1 cylinder is typical).
+Reply 'U' to the ICK003D confirmation message.
+
+STEP 4: VARY VOLUME ONLINE
+--------------------------
+On the MVS console:
+
+    v <address>,online
+
+STEP 5: MOUNT WITH STORAGE CLASS
+--------------------------------
+On the MVS console:
+
+    m <address>,vol=(sl,<volser>),use=<useclass>
+
+Storage classes:
+    PRIVATE  - Datasets only if volume explicitly specified
+    PUBLIC   - For temporary datasets
+    STORAGE  - Default for permanent datasets (most common)
+
+STEP 6: UPDATE VATLST00 (For Permanent Addition)
+------------------------------------------------
+Edit SYS1.PARMLIB(VATLST00) to add an entry:
+
+    VOLSER,R,U,DEVTYPE  ,M        COMMENT
+
+    R = 0 (resident) or 1 (reserved)
+    U = 0 (STORAGE), 1 (PUBLIC), or 2 (PRIVATE)
+    M = Y (mount required) or N (no mount prompt)
+
+Example: WORK01,0,0,3350    ,N        WORK PACK (STORAGE)
+
+STEP 7: UPDATE HERCULES CONFIG FILE
+-----------------------------------
+Add the device to your .cnf file (e.g., mvs.cnf):
+
+    <address>    <devtype>    dasd/<filename>    [cu=3880]
+
+Example: 0253    3350    dasd/work01.3350
+
+QUICK EXAMPLE - ADDING A 3350 WORK VOLUME
+-----------------------------------------
+1. Host:      dasdinit -a dasd/work01.3350 3350 SCRTCH
+2. Hercules:  attach 253 3350 dasd/work01.3350
+3. JCL:       Submit ICKDSF job with VOLID(WORK01) UNITADDRESS(253)
+4. Console:   v 253,online
+5. Console:   m 253,vol=(sl,WORK01),use=storage
+6. Edit:      SYS1.PARMLIB(VATLST00) - add WORK01 entry
+7. Edit:      conf/mvs.cnf - add device line
+
+Source: https://www.jaymoseley.com/hercules/installMVS/addingDasdV8.htm
